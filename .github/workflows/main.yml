@@ -1,10 +1,10 @@
-name: Build and Release APK
+
+name: Build & Release APK
 
 on:
   push:
-    branches:
-      - main
-      - master
+    tags:
+      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -12,95 +12,43 @@ permissions:
 
 jobs:
   build:
-    name: Build Release APK
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Find and extract project zip (if present)
-        id: extract
-        run: |
-          ZIP_FILE=$(find . -maxdepth 2 -iname "*.zip" | head -n 1)
-          if [ -n "$ZIP_FILE" ]; then
-            echo "Zip bulundu: $ZIP_FILE, aÃ§Ä±lÄ±yor..."
-            unzip -o "$ZIP_FILE" -d .
-          else
-            echo "Repo kÃ¶kÃ¼nde bir zip dosyasÄ± bulunamadÄ±, mevcut dosyalar kullanÄ±lacak."
-          fi
-
-      - name: Locate gradlew and set project directory
-        id: detect
-        run: |
-          GRADLEW_PATH=$(find . -maxdepth 5 -type f -name "gradlew" | head -n 1)
-          if [ -z "$GRADLEW_PATH" ]; then
-            echo "HATA: HiÃ§bir yerde 'gradlew' dosyasÄ± bulunamadÄ±. Zip doÄŸru aÃ§Ä±ldÄ± mÄ± kontrol edin."
-            find . -maxdepth 3
-            exit 1
-          fi
-          PROJECT_DIR=$(dirname "$GRADLEW_PATH")
-          echo "Proje dizini bulundu: $PROJECT_DIR"
-          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
-
-      - name: Set up JDK 17 (Eclipse Temurin)
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: "temurin"
+          java-version: "17"
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-      - name: Generate Gradle wrapper jar (if missing)
-        working-directory: ${{ steps.detect.outputs.project_dir }}
-        run: |
-          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo "gradle-wrapper.jar bulunamadÄ±, Ã¼retiliyor..."
-            gradle wrapper --gradle-version 8.7
-          else
-            echo "gradle-wrapper.jar zaten mevcut."
-          fi
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.7
 
-      - name: Grant execute permission for gradlew
-        working-directory: ${{ steps.detect.outputs.project_dir }}
-        run: chmod +x ./gradlew
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
-      - name: Build release APK
-        working-directory: ${{ steps.detect.outputs.project_dir }}
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
 
-      - name: Locate generated APK
-        id: locate_apk
-        working-directory: ${{ steps.detect.outputs.project_dir }}
-        run: |
-          APK_PATH=$(find . -type f -path "*/outputs/apk/release/*.apk" | head -n 1)
-          if [ -z "$APK_PATH" ]; then
-            echo "HATA: Release APK dosyasÄ± bulunamadÄ±!"
-            find . -path "*/outputs/apk/*"
-            exit 1
-          fi
-          echo "APK bulundu: $APK_PATH"
-          echo "apk_path=${{ steps.detect.outputs.project_dir }}/${APK_PATH#./}" >> "$GITHUB_OUTPUT"
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk EdgeLightingPlus.apk
 
-      - name: Upload APK as build artifact
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-apk
-          path: ${{ steps.locate_apk.outputs.apk_path }}
-          if-no-files-found: error
-          retention-days: 30
+          name: EdgeLightingPlus-apk
+          path: EdgeLightingPlus.apk
 
-      - name: Create GitHub Release and upload APK
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: "Release Build #${{ github.run_number }}"
-          body: |
-            Bu release, GitHub Actions tarafÄ±ndan otomatik olarak Ã¼retilmiÅŸtir.
-            Commit: ${{ github.sha }}
-          draft: false
-          prerelease: false
-          files: ${{ steps.locate_apk.outputs.apk_path }}
+          files: EdgeLightingPlus.apk
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
