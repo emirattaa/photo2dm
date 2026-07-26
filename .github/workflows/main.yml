@@ -21,19 +21,19 @@ jobs:
 
       - name: Unzip Android project source (if present)
         run: |
-          if [ -f "android-sample-app.zip" ]; then
-            echo "android-sample-app.zip bulundu, aÃ§Ä±lÄ±yor..."
-            unzip -o android-sample-app.zip -d .
+          if [ -f "colorbot-app.zip" ]; then
+            echo "colorbot-app.zip bulundu, aÃ§Ä±lÄ±yor..."
+            unzip -o colorbot-app.zip -d .
             echo "Zip iÃ§eriÄŸi aÃ§Ä±ldÄ±."
           else
-            echo "android-sample-app.zip bulunamadÄ±, mevcut proje kÃ¶k dizini kullanÄ±lacak."
+            echo "colorbot-app.zip bulunamadÄ±, mevcut proje kÃ¶k dizini kullanÄ±lacak."
           fi
 
       - name: Detect project root
         id: detect
         run: |
-          if [ -f "android-sample-app/gradlew" ]; then
-            echo "project_dir=android-sample-app" >> "$GITHUB_OUTPUT"
+          if [ -f "colorbot-app/gradlew" ]; then
+            echo "project_dir=colorbot-app" >> "$GITHUB_OUTPUT"
           else
             echo "project_dir=." >> "$GITHUB_OUTPUT"
           fi
