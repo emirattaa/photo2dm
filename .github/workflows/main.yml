@@ -1,74 +1,96 @@
-name: Build & Release APK
+name: Build APK from source zip
+
+# Bu workflow, repo kÃ¶k dizinindeki (veya source/ klasÃ¶rÃ¼ndeki) *.zip kaynak
+# kodunu bulur, aÃ§ar, Gradle ile derler ve Ã§Ä±kan APK'yÄ± otomatik olarak
+# GitHub Releases'e yÃ¼kler.
+#
+# KullanÄ±m:
+#   1) EdgeLightPlus-source.zip dosyasÄ±nÄ± repo kÃ¶kÃ¼ne (veya source/ klasÃ¶rÃ¼ne) koyun.
+#   2) Bu dosyayÄ± .github/workflows/build-apk.yml olarak ekleyin.
+#   3) Actions sekmesinden "Build APK from source zip" workflow'unu elle Ã§alÄ±ÅŸtÄ±rÄ±n
+#      (workflow_dispatch) ya da zip dosyasÄ±nÄ± push edin.
+#   4) Derleme bitince Releases sekmesinde APK'yÄ± bulacaksÄ±nÄ±z.
 
 on:
+  workflow_dispatch: {}
   push:
-    tags:
-      - "v*"
-  workflow_dispatch:
+    branches: [ main, master ]
+    paths:
+      - '**.zip'
+      - '.github/workflows/build-apk.yml'
 
 permissions:
   contents: write
 
-env:
-  # Repo kÃ¶kÃ¼ndeki zip dosyasÄ±nÄ±n adÄ± ve iÃ§inden Ã§Ä±kan proje klasÃ¶rÃ¼nÃ¼n adÄ±.
-  ZIP_NAME: EdgeLightingPlus.zip
-  PROJECT_DIR: EdgeLightingPlus
-
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repo
+      - name: Repo'yu Ã§ek
         uses: actions/checkout@v4
 
-      - name: Unzip project
+      - name: Kaynak zip dosyasÄ±nÄ± bul
+        id: findzip
         run: |
-          if [ ! -f "$ZIP_NAME" ]; then
-            echo "::error::$ZIP_NAME repo kÃ¶kÃ¼nde bulunamadÄ±."
+          ZIP_PATH=$(find . -maxdepth 2 -iname "*.zip" | head -n 1)
+          if [ -z "$ZIP_PATH" ]; then
+            echo "Repo iÃ§inde .zip kaynak dosyasÄ± bulunamadÄ±. Zip dosyasÄ±nÄ± repo kÃ¶kÃ¼ne veya source/ klasÃ¶rÃ¼ne ekleyin." >&2
             exit 1
           fi
-          rm -rf "$PROJECT_DIR"
-          unzip -q "$ZIP_NAME" -d .
-          if [ ! -f "$PROJECT_DIR/settings.gradle.kts" ]; then
-            echo "::error::Unzip sonrasÄ± $PROJECT_DIR/settings.gradle.kts bulunamadÄ±. Zip iÃ§indeki klasÃ¶r adÄ±nÄ± kontrol edin."
-            exit 1
-          fi
+          echo "Bulunan zip: $ZIP_PATH"
+          echo "zip_path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
 
-      - name: Set up JDK 17
+      - name: Zip'i aÃ§
+        run: |
+          mkdir -p project
+          unzip -q "${{ steps.findzip.outputs.zip_path }}" -d project
+          # Zip iÃ§inde tek bir Ã¼st klasÃ¶r varsa (Ã¶r: EdgeLightPlus/), gradle
+          # dosyalarÄ±nÄ± bulmak iÃ§in o klasÃ¶rÃ¼n iÃ§ine iniyoruz.
+          if [ ! -f project/settings.gradle ] && [ ! -f project/settings.gradle.kts ]; then
+            INNER_DIR=$(find project -mindepth 1 -maxdepth 1 -type d | head -n 1)
+            if [ -n "$INNER_DIR" ]; then
+              mv "$INNER_DIR"/* project/ 2>/dev/null || true
+              mv "$INNER_DIR"/.[!.]* project/ 2>/dev/null || true
+            fi
+          fi
+          echo "Proje iÃ§eriÄŸi:"
+          ls -la project
+
+      - name: JDK 17 kur
         uses: actions/setup-java@v4
         with:
-          distribution: "temurin"
-          java-version: "17"
+          distribution: temurin
+          java-version: '17'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: Android SDK kur
+        uses: android-actions/setup-android@v3
 
-      - name: Generate Gradle wrapper
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: gradle wrapper --gradle-version 8.7
+      - name: Android SDK lisanslarÄ±nÄ± kabul et
+        run: yes | sdkmanager --licenses > /dev/null || true
 
-      - name: Make gradlew executable
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: chmod +x gradlew
+      - name: Gradle kur ve APK derle
+        uses: gradle/actions/setup-gradle@v3
 
-      - name: Build debug APK
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Debug APK derle
+        working-directory: project
+        run: gradle assembleDebug --stacktrace
 
-      - name: Copy APK to workspace root
-        run: cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" EdgeLightingPlus.apk
+      - name: APK dosyasÄ±nÄ± bul
+        id: findapk
+        run: |
+          APK_PATH=$(find project -iname "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "Derleme sonunda APK bulunamadÄ±." >&2
+            exit 1
+          fi
+          echo "Bulunan APK: $APK_PATH"
+          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: EdgeLightingPlus-apk
-          path: EdgeLightingPlus.apk
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Release oluÅŸtur ve APK'yÄ± ekle
         uses: softprops/action-gh-release@v2
         with:
-          files: EdgeLightingPlus.apk
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: build-${{ github.run_number }}
+          name: "Otomatik build #${{ github.run_number }}"
+          files: ${{ steps.findapk.outputs.apk_path }}
+          generate_release_notes: false
