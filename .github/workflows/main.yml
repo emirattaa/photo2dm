@@ -70,7 +70,12 @@ jobs:
         run: yes | sdkmanager --licenses > /dev/null || true
 
       - name: Gradle kur ve APK derle
+        # Ã–NEMLÄ°: AGP 8.2.2, Gradle 9.x ile uyumlu deÄŸil (configuration
+        # resolve/mutate hatasÄ± veriyor). AGP 8.2.2'nin resmi olarak
+        # derlendiÄŸi/test edildiÄŸi Gradle sÃ¼rÃ¼mÃ¼ 8.2'dir, onu sabitliyoruz.
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.2'
 
       - name: Debug APK derle
         working-directory: project
